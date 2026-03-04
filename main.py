@@ -75,7 +75,7 @@ def looks_like_ad_text(t: str) -> bool:
         "clínica", "laboratório", "ótica", "loja", "móveis", "colchões",
         "academia", "concessionária", "pizzaria", "lanchonete", "restaurante",
         "pet shop", "seguro", "consórcio", "financiamento", "imobiliária", "construtora","hospital",
-        "academia", "concessionária", "pizzaria", "lanchonete", "restaurante",
+        "academia", "concessionária", "pizzaria", "lanchonete", "restaurante", "quilo", "posto"
     ]
 
     price_pattern = re.search(r"(r\$)\s*\d+([.,]\d{2})?", t_low)
