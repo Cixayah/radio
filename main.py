@@ -1,7 +1,7 @@
 """
 =============================================================
   DETECTOR DE ANÚNCIOS DE RÁDIO
-  Versão 2.1 — Fila centralizada (sem segfault)
+  Versão 3.1 — Groq Cloud + múltiplos anúncios por ciclo
 =============================================================
 
   ╔══════════════════════════════════════════════╗
@@ -15,35 +15,43 @@
 STATIONS = {
     "Band_FM":      "https://stm.alphanetdigital.com.br:7040/band",
     "Ondas_Verdes": "https://live3.livemus.com.br:6922/stream",
-    "Jovem_Pan": "https://sc1s.cdn.upx.com:9986/stream?1772563648730",
+    "Jovem_Pan":    "https://sc1s.cdn.upx.com:9986/stream?1772563648730",
     # "Radio_exemplo": "https://url-do-stream-aqui",
 }
 
 # ─── Configurações gerais ────────────────────────────────────────────────────
 
 RECORD_DURATION      = 30       # segundos por captura
-SLEEP_BETWEEN_CYCLES = 5        # segundos entre ciclos completos
-WHISPER_MODEL        = "large"  # tiny | base | small | medium | large
-OLLAMA_URL           = "http://localhost:11434/api/generate"
-OLLAMA_MODEL         = "gemma3:4b"
+GROQ_WHISPER_MODEL   = "whisper-large-v3"
+GROQ_LLM_MODEL       = "llama-3.3-70b-versatile"
 MIN_SPEECH_RATIO     = 0.30     # fração mínima de fala para processar
 MIN_SPEECH_SEGS      = 2        # mínimo de segmentos de fala
-TRANSCRIPTION_CAP    = 1200     # máx de chars enviados ao LLM
+TRANSCRIPTION_CAP    = 3000     # máx de chars enviados ao LLM (aumentado para 30s)
 
 # ─── Imports ─────────────────────────────────────────────────────────────────
 
-import subprocess, datetime, os, re, time, shutil, json, requests, unicodedata
+import subprocess, datetime, os, re, time, shutil, json, unicodedata
 import threading, queue, traceback
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
 
-import numpy as np
 import librosa
 import torch
-import whisper
+
+from groq import Groq
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# ─── Carregar variáveis de ambiente ──────────────────────────────────────────
+
+load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    raise ValueError("❌ GROQ_API_KEY não encontrada! Verifique o arquivo .env")
+
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 # ─── Timezone ────────────────────────────────────────────────────────────────
 
@@ -121,8 +129,7 @@ def heuristic_score(text: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  WORKER DE GRAVAÇÃO — roda em thread separada por rádio
-#  Apenas grava o áudio e empurra o caminho do arquivo para a fila central
+#  WORKER DE GRAVAÇÃO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def recorder_worker(name: str, url: str, audio_path: str,
@@ -146,7 +153,6 @@ def recorder_worker(name: str, url: str, audio_path: str,
             print(f"  ⚠️  [{name}] Erro na gravação: {e}")
             if os.path.exists(file_path):
                 os.remove(file_path)
-
         time.sleep(2)
 
     print(f"  🛑 Gravador encerrado: {name}")
@@ -175,8 +181,10 @@ class AdDetector:
         )
         self.get_speech_timestamps = utils[0]
 
-        print(f"🔧 Carregando Whisper ({WHISPER_MODEL})...")
-        self.whisper_model = whisper.load_model(WHISPER_MODEL)
+        print("☁️  Groq configurado:")
+        print(f"     Transcrição : {GROQ_WHISPER_MODEL}")
+        print(f"     LLM         : {GROQ_LLM_MODEL}")
+        print(f"     Ciclo       : {RECORD_DURATION}s")
 
         self._init_excel()
         print("✅ Pronto.\n")
@@ -301,36 +309,41 @@ class AdDetector:
             print(f"  ⚠️  Erro VAD: {e}")
             return None
 
-    # ── Whisper ──────────────────────────────────────────────────────────────
+    # ── Transcrição via Groq Whisper ──────────────────────────────────────────
 
     def transcribe(self, file_path: str) -> str:
         try:
-            result = self.whisper_model.transcribe(
-                file_path,
-                language="pt",
-                fp16=False,
-                temperature=0,
-                condition_on_previous_text=False,
-            )
-            return (result.get("text") or "").strip()
+            with open(file_path, "rb") as f:
+                response = groq_client.audio.transcriptions.create(
+                    file=(os.path.basename(file_path), f),
+                    model=GROQ_WHISPER_MODEL,
+                    language="pt",
+                    response_format="text",
+                )
+            return (response if isinstance(response, str) else str(response)).strip()
         except Exception as e:
-            print(f"  ⚠️  Erro Whisper: {e}")
+            print(f"  ⚠️  Erro Groq Whisper: {e}")
             traceback.print_exc()
             return ""
 
-    # ── LLM ──────────────────────────────────────────────────────────────────
+    # ── Classificação múltipla via Groq LLM ──────────────────────────────────
 
-    def _ollama_classify(self, transcription: str, heur: dict) -> dict:
+    def _groq_classify_multi(self, transcription: str, heur: dict) -> list:
         dica = ""
         if heur["ad_score"] >= 4:
-            dica = "ATENÇÃO: análise automática sugere fortemente que é um anúncio."
+            dica = "ATENÇÃO: análise automática sugere fortemente que há anúncios."
         elif heur["ad_score"] >= 2:
             dica = "Análise automática detectou alguns indicadores de anúncio."
         elif heur["nonad_score"] >= 2:
-            dica = "Análise automática sugere conteúdo jornalístico/informativo."
+            dica = "Análise automática sugere conteúdo predominantemente jornalístico/informativo."
 
         prompt = f"""Você é um classificador especializado em áudio de rádio brasileiro.
-Analise o texto transcrito e decida se é um ANÚNCIO PUBLICITÁRIO ou CONTEÚDO NORMAL.
+O texto abaixo é a transcrição de {RECORD_DURATION} segundos de rádio e pode conter ZERO, UM ou MAIS anúncios publicitários diferentes, intercalados com músicas, notícias ou locuções normais.
+
+Sua tarefa:
+1. Identifique CADA anúncio publicitário distinto presente no texto.
+2. Anúncios diferentes têm anunciantes/marcas diferentes — não agrupe dois anunciantes em um só.
+3. Se não houver nenhum anúncio, retorne lista vazia.
 
 Critérios para ANÚNCIO:
 - Promoções, preços, descontos, parcelamentos
@@ -338,95 +351,130 @@ Critérios para ANÚNCIO:
 - Call-to-action: compre, visite, ligue, acesse, aproveite
 - Endereço, telefone, site, Instagram, WhatsApp de negócio
 
-Critérios para NÃO-ANÚNCIO:
+Critérios para NÃO-ANÚNCIO (ignore esses trechos):
 - Locução informativa (notícias, boletins, previsão do tempo)
 - Apresentação de músicas ou programas
 - Conversa entre locutores sem venda
+- Letras de música
 
 {dica}
 
-Texto:
+Texto transcrito:
 \"\"\"{transcription}\"\"\"
 
-Responda SOMENTE com JSON válido:
+Responda SOMENTE com JSON válido no formato:
 {{
-  "eh_anuncio": true ou false,
-  "anunciante": "nome da marca" ou null,
-  "produto": "produto/serviço" ou null,
-  "confianca": "alta" ou "media" ou "baixa",
-  "motivo_curto": "justificativa em 1 frase"
-}}""".strip()
+  "anuncios": [
+    {{
+      "anunciante": "nome da marca/empresa",
+      "produto": "produto ou serviço anunciado",
+      "confianca": "alta" ou "media" ou "baixa",
+      "motivo_curto": "justificativa em 1 frase",
+      "trecho": "trecho resumido do texto que originou essa detecção (máx 100 chars)"
+    }}
+  ]
+}}
+
+Se não houver anúncios: {{"anuncios": []}}""".strip()
 
         try:
-            resp = requests.post(
-                OLLAMA_URL,
-                json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0},
-                },
-                timeout=120,
+            response = groq_client.chat.completions.create(
+                model=GROQ_LLM_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=800,
+                response_format={"type": "json_object"},
             )
-            raw  = resp.json().get("response", "")
-            data = raw if isinstance(raw, dict) else {}
-            if not data:
-                raw = (raw or "").strip()
-                try:
-                    data = json.loads(raw)
-                except Exception:
-                    m = re.search(r"\{.*\}", raw, flags=re.S)
-                    data = json.loads(m.group(0)) if m else {}
+            raw = response.choices[0].message.content or ""
+            data = {}
+            try:
+                data = json.loads(raw)
+            except Exception:
+                m = re.search(r"\{.*\}", raw, flags=re.S)
+                data = json.loads(m.group(0)) if m else {}
 
-            conf = str(data.get("confianca", "baixa")).lower().strip()
-            data["confianca"] = conf if conf in ("alta", "media", "baixa") else "baixa"
+            anuncios = data.get("anuncios", [])
+            if not isinstance(anuncios, list):
+                return []
 
-            for k in ("anunciante", "produto"):
-                v = data.get(k)
-                if isinstance(v, str) and v.strip().lower() in ("", "null", "none"):
-                    data[k] = None
+            resultado = []
+            seen_anunciantes = set()
 
-            data["eh_anuncio"] = bool(data.get("eh_anuncio", False))
-            return data
+            for ad in anuncios:
+                if not isinstance(ad, dict):
+                    continue
+
+                anunciante = ad.get("anunciante") or ""
+                if isinstance(anunciante, str) and anunciante.strip().lower() in ("", "null", "none"):
+                    anunciante = None
+
+                produto = ad.get("produto") or ""
+                if isinstance(produto, str) and produto.strip().lower() in ("", "null", "none"):
+                    produto = None
+
+                conf = str(ad.get("confianca", "baixa")).lower().strip()
+                if conf not in ("alta", "media", "baixa"):
+                    conf = "baixa"
+
+                # Deduplicar pelo nome do anunciante (case-insensitive)
+                chave = (anunciante or "").strip().lower()
+                if chave and chave in seen_anunciantes:
+                    continue
+                if chave:
+                    seen_anunciantes.add(chave)
+
+                resultado.append({
+                    "eh_anuncio":   True,
+                    "anunciante":   anunciante,
+                    "produto":      produto,
+                    "confianca":    conf,
+                    "motivo_curto": ad.get("motivo_curto", ""),
+                    "trecho":       ad.get("trecho", ""),
+                })
+
+            return resultado
 
         except Exception as e:
-            print(f"  ⚠️  Erro Ollama: {e}")
-            return {"eh_anuncio": False, "confianca": "baixa", "anunciante": None, "produto": None}
+            print(f"  ⚠️  Erro Groq LLM: {e}")
+            return []
 
-    def classify(self, transcription: str) -> dict:
+    def classify_multi(self, transcription: str) -> list:
         transcription = (transcription or "").strip()
-        empty = {"eh_anuncio": False, "confianca": "baixa", "anunciante": None, "produto": None}
-
         if len(transcription) < 25:
-            return empty
+            return []
 
-        heur = heuristic_score(transcription)
-        data = self._ollama_classify(transcription, heur)
+        heur     = heuristic_score(transcription)
+        anuncios = self._groq_classify_multi(transcription, heur)
 
-        eh         = bool(data.get("eh_anuncio", False))
-        conf       = data.get("confianca", "baixa")
-        anunciante = data.get("anunciante")
+        aprovados = []
+        for ad in anuncios:
+            conf       = ad.get("confianca", "baixa")
+            anunciante = ad.get("anunciante")
 
-        if eh and conf == "alta":
-            return data
-        if eh and conf == "media" and heur["ad_score"] >= 2:
-            return data
-        if eh and conf == "baixa" and heur["ad_score"] >= 5 and anunciante:
-            data["confianca"] = "media"
-            return data
-        if not eh and heur["ad_score"] >= 6 and heur["has_price"]:
-            data["eh_anuncio"] = True
-            data["confianca"]  = "baixa"
-            return data
-        if heur["nonad_score"] >= 2 and conf != "alta":
-            return empty
+            if conf == "alta":
+                aprovados.append(ad)
+            elif conf == "media" and heur["ad_score"] >= 2:
+                aprovados.append(ad)
+            elif conf == "baixa" and heur["ad_score"] >= 5 and anunciante:
+                ad["confianca"] = "media"
+                aprovados.append(ad)
 
-        return empty
+        # Fallback heurístico se o LLM não detectou nada mas score é muito alto
+        if not aprovados and heur["ad_score"] >= 6 and heur["has_price"]:
+            aprovados.append({
+                "eh_anuncio":   True,
+                "anunciante":   None,
+                "produto":      None,
+                "confianca":    "baixa",
+                "motivo_curto": "Detectado por heurística (preço + palavras-chave)",
+                "trecho":       "",
+            })
+
+        return aprovados
 
     # ── Salvar áudio ─────────────────────────────────────────────────────────
 
-    def save_ad(self, station: str, audio_file: str, info: dict) -> str:
+    def save_ad(self, station: str, audio_file: str, info: dict, index: int = 0) -> str:
         marca   = safe_filename(info.get("anunciante") or "Desconhecido")
         produto = safe_filename(info.get("produto")    or "")
         ts      = br_timestamp()
@@ -434,6 +482,8 @@ Responda SOMENTE com JSON válido:
         if produto and produto != "Desconhecido":
             parts.append(produto)
         parts.append(ts)
+        if index > 0:
+            parts.append(f"ad{index}")
         dest = os.path.join(self.ads_path, "__".join(parts) + ".mp3")
         shutil.copy2(audio_file, dest)
         return dest
@@ -441,14 +491,13 @@ Responda SOMENTE com JSON válido:
     # ── Processar item da fila ────────────────────────────────────────────────
 
     def process_item(self, name: str, audio_file: str):
-        """Sempre chamado na thread principal — sem paralelismo no Whisper/VAD."""
         try:
             vad = self.analyze_vad(audio_file)
             if not vad:
                 print(f"  🎵 [{name}] Ignorado (pouca fala)")
                 return
 
-            print(f"  🔍 [{name}] Transcrevendo... (speech={vad['speech_ratio']:.0%}, frags={vad['fragments']})")
+            print(f"  🔍 [{name}] Transcrevendo via Groq... (speech={vad['speech_ratio']:.0%}, frags={vad['fragments']})")
             text    = self.transcribe(audio_file)
             snippet = text[:TRANSCRIPTION_CAP]
 
@@ -458,24 +507,29 @@ Responda SOMENTE com JSON válido:
 
             print(f"  📝 [{name}] {snippet[:200].replace(chr(10), ' ')!r}")
 
-            info = self.classify(snippet)
+            anuncios = self.classify_multi(snippet)
 
-            if info.get("eh_anuncio"):
-                marca = info.get("anunciante") or "Desconhecido"
-                conf  = info.get("confianca", "media")
-                print(f"  📢 [{name}] ANÚNCIO → {marca} (conf={conf})")
-                saved = self.save_ad(name, audio_file, info)
+            if not anuncios:
+                print(f"  🎵 [{name}] Nenhum anúncio detectado.")
+                return
+
+            print(f"  📢 [{name}] {len(anuncios)} anúncio(s) detectado(s) neste ciclo!")
+
+            for i, info in enumerate(anuncios, start=1):
+                marca  = info.get("anunciante") or "Desconhecido"
+                conf   = info.get("confianca", "media")
+                trecho = info.get("trecho", "")
+                print(f"       [{i}] {marca} (conf={conf}) — {trecho[:80]}")
+
+                idx   = i if len(anuncios) > 1 else 0
+                saved = self.save_ad(name, audio_file, info, index=idx)
                 self._append_to_excel(name, info, snippet, saved)
-                print(f"  💾 [{name}] Áudio: {os.path.basename(saved)}")
-            else:
-                motivo = info.get("motivo_curto", "")
-                print(f"  🎵 [{name}] Não é anúncio. {motivo}")
+                print(f"       💾 Áudio: {os.path.basename(saved)}")
 
         except Exception as e:
             print(f"  ❌ [{name}] Erro: {e}")
             traceback.print_exc()
         finally:
-            # Garante limpeza do arquivo temporário sempre
             if os.path.exists(audio_file):
                 os.remove(audio_file)
 
@@ -483,7 +537,8 @@ Responda SOMENTE com JSON válido:
 
     def run(self):
         print("🚀 Iniciando monitoramento contínuo...")
-        print(f"   Rádios: {', '.join(STATIONS.keys())}")
+        print(f"   Rádios   : {', '.join(STATIONS.keys())}")
+        print(f"   Duração  : {RECORD_DURATION}s por ciclo")
         print(f"   Relatório: {os.path.abspath(self.report_path)}")
         print("   (Ctrl+C para parar)\n")
 
@@ -491,7 +546,6 @@ Responda SOMENTE com JSON válido:
         stop_event = threading.Event()
         threads    = []
 
-        # Uma thread de gravação por rádio (só grava, não processa)
         for name, url in STATIONS.items():
             t = threading.Thread(
                 target=recorder_worker,
@@ -507,7 +561,6 @@ Responda SOMENTE com JSON válido:
         try:
             while True:
                 try:
-                    # Bloqueia até chegar um arquivo, com timeout para checar Ctrl+C
                     name, audio_file = work_queue.get(timeout=2)
                     print(f"\n{'─'*60}")
                     print(f"📥 [{name}] Novo áudio — {br_display()}")
