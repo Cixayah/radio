@@ -22,11 +22,11 @@ STATIONS = {
 # ─── Configurações gerais ────────────────────────────────────────────────────
 
 RECORD_DURATION      = 30       # segundos por captura
-GROQ_WHISPER_MODEL   = "whisper-large-v3"
-GROQ_LLM_MODEL       = "llama-3.3-70b-versatile"
-MIN_SPEECH_RATIO     = 0.30     # fração mínima de fala para processar
-MIN_SPEECH_SEGS      = 2        # mínimo de segmentos de fala
-TRANSCRIPTION_CAP    = 3000     # máx de chars enviados ao LLM (aumentado para 30s)
+GROQ_WHISPER_MODEL   = "whisper-large-v3-turbo"
+GROQ_LLM_MODEL       = "llama-3.1-8b-instant"
+MIN_SPEECH_RATIO     = 0.40     # fração mínima de fala para processar
+MIN_SPEECH_SEGS      = 3      # mínimo de segmentos de fala
+TRANSCRIPTION_CAP    = 800     # máx de chars enviados ao LLM (aumentado para 30s)
 
 # ─── Imports ─────────────────────────────────────────────────────────────────
 
