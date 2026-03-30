@@ -54,6 +54,26 @@ def safe_filename(text: str, max_len: int = 60) -> str:
     return (text or "Desconhecido")[:max_len]
 
 
+# ─── Mapeamento de Transcrição ────────────────────────────────────────────────
+
+# Dicionário para corrigir transcrições incorretas do Whisper.
+# Chave: termo incorreto (minúsculo), Valor: termo correto.
+TRANSCRIPTION_FIXES = {
+    "netflix": "Netflex",
+    "moresq": "Moreschi",
+    "moresc": "Moreschi",
+    "moresqui": "Moreschi",
+}
+
+def fix_transcription(text: str) -> str:
+    """Substitui variações de nomes detectadas incorretamente pelo modelo."""
+    t = text
+    for wrong, right in TRANSCRIPTION_FIXES.items():
+        # Usa regex \b para substituir apenas a palavra inteira
+        t = re.sub(rf"\b{re.escape(wrong)}\b", right, t, flags=re.IGNORECASE)
+    return t
+
+
 # ─── Heurística ───────────────────────────────────────────────────────────────
 
 # Palavras com peso 2 (forte sinal de anúncio)
@@ -270,6 +290,21 @@ class AdDetector:
         h2_fill = PatternFill("solid", start_color="2E75B6")
         for col, h in enumerate(["Rádio", "Total de Anúncios", "Última Detecção"], 1):
             _cell_style(ws2.cell(row=1, column=col, value=h), font=h2_font, fill=h2_fill)
+        ws2.column_dimensions["A"].width = 18
+        ws2.column_dimensions["B"].width = 18
+        ws2.column_dimensions["C"].width = 20
+
+        ws3 = wb.create_sheet("Resumo por Anunciante")
+        for col, h in enumerate(["Anunciante", "Total de Anúncios", "Última Detecção"], 1):
+            _cell_style(ws3.cell(row=1, column=col, value=h), font=h2_font, fill=h2_fill)
+        ws3.column_dimensions["A"].width = 25
+        ws3.column_dimensions["B"].width = 20
+        ws3.column_dimensions["C"].width = 20
+
+        # Adiciona filtros aos cabeçalhos iniciais
+        ws.auto_filter.ref = ws.dimensions
+        ws2.auto_filter.ref = ws2.dimensions
+        ws3.auto_filter.ref = ws3.dimensions
 
         wb.save(self.report_path)
         print(f"📊 Relatório criado: {self.report_path}")
@@ -304,6 +339,37 @@ class AdDetector:
                 nr = ws2.max_row + 1
                 for col, val in enumerate([station, 1, br_display()], 1):
                     ws2.cell(row=nr, column=col, value=val)
+
+            # --- Resumo por Anunciante ---
+            anunciante_nome = info.get("anunciante")
+            if anunciante_nome and anunciante_nome not in ("—", "Desconhecido"):
+                if "Resumo por Anunciante" not in wb.sheetnames:
+                    wb.create_sheet("Resumo por Anunciante")
+                ws3 = wb["Resumo por Anunciante"]
+                
+                # Preenche cabeçalhos se a aba for nova
+                if ws3.max_row == 1 and not ws3.cell(row=1, column=1).value:
+                    h2_font = Font(bold=True, color="FFFFFF", name="Arial")
+                    h2_fill = PatternFill("solid", start_color="2E75B6")
+                    for col, h in enumerate(["Anunciante", "Total de Anúncios", "Última Detecção"], 1):
+                        _cell_style(ws3.cell(row=1, column=col, value=h), font=h2_font, fill=h2_fill)
+                    ws3.column_dimensions["A"].width = 25
+                    ws3.column_dimensions["B"].width = 20
+                    ws3.column_dimensions["C"].width = 20
+
+                sr3 = next((r for r in ws3.iter_rows(min_row=2) if r[0].value == anunciante_nome), None)
+                if sr3:
+                    sr3[1].value = (sr3[1].value or 0) + 1
+                    sr3[2].value = br_display()
+                else:
+                    nr3 = ws3.max_row + 1
+                    for col, val in enumerate([anunciante_nome, 1, br_display()], 1):
+                        ws3.cell(row=nr3, column=col, value=val)
+                ws3.auto_filter.ref = ws3.dimensions
+
+            # Aplica filtros nas demais abas atualizadas
+            ws.auto_filter.ref = ws.dimensions
+            ws2.auto_filter.ref = ws2.dimensions
 
             wb.save(self.report_path)
             print(f"  ✅ Excel salvo ({row - 1} anúncios)")
@@ -534,6 +600,7 @@ class AdDetector:
                   f"(speech={vad['speech_ratio']:.0%}, frags={vad['fragments']})")
 
             full_text = self.transcribe(audio_file)
+            full_text = fix_transcription(full_text)
             snippet   = full_text[:TRANSCRIPTION_CAP]
 
             if not snippet:

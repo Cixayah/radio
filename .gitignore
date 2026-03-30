@@ -3,3 +3,5 @@ venv
 *.mp3
 *.xlsx
 .env
+.idea
+radio_capture
