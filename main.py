@@ -1,4 +1,3 @@
-
 STATIONS = {
     "Band_FM":      "https://stm.alphanetdigital.com.br:7040/band",
     "Ondas_Verdes": "https://live3.livemus.com.br:6922/stream",
@@ -63,13 +62,20 @@ TRANSCRIPTION_FIXES = {
     "moresq": "Moreschi",
     "moresc": "Moreschi",
     "moresqui": "Moreschi",
+    # La Juma / Lajuma
+    "la juma": "Lajuma",
+    "lajuma": "Lajuma",
+    # Pony Watts → Fone Whats (erro do Whisper com sotaque)
+    "pony watts": "Fone Whats",
+    "pony wats": "Fone Whats",
+    "ponywatts": "Fone Whats",
 }
 
 def fix_transcription(text: str) -> str:
     """Substitui variações de nomes detectadas incorretamente pelo modelo."""
     t = text
     for wrong, right in TRANSCRIPTION_FIXES.items():
-        # Usa regex \b para substituir apenas a palavra inteira
+        # Usa regex \b para substituir apenas a palavra inteira (ou frase exata)
         t = re.sub(rf"\b{re.escape(wrong)}\b", right, t, flags=re.IGNORECASE)
     return t
 
@@ -111,6 +117,9 @@ NON_AD_PHRASES = [
     "siga a gente", "nos siga", "acompanhe a gente",
     "você está ouvindo a", "aqui é a", "essa é a",
     "nossa programação", "nossa rádio", "pelo nosso aplicativo",
+    # Locutor dando contato da rádio (não é anúncio)
+    "fone whats", "fone e whats", "fone zap",
+    "pony watts", "pony wats", "ponywatts",
 ]
 
 PRICE_RE = re.compile(r"r\$\s*\d+([.,]\d{2})?|\d+\s*reais", re.IGNORECASE)
@@ -230,8 +239,10 @@ _THIN_BORDER = Border(**{s: Side(style="thin", color="CCCCCC")
                          for s in ("left", "right", "bottom")})
 _DATA_BORDER = Border(**{s: Side(style="thin", color="DDDDDD")
                          for s in ("left", "right", "bottom")})
-_DATA_FONT   = Font(name="Arial", size=10)
-_CONF_FILL   = {
+_DATA_FONT       = Font(name="Arial", size=10)
+_DATA_FONT_DARK  = Font(name="Arial", size=10, color="000000")
+_WHITE_FILL      = PatternFill("solid", start_color="FFFFFF")
+_CONF_FILL       = {
     "alta":  PatternFill("solid", start_color="E2EFDA"),
     "media": PatternFill("solid", start_color="FFF2CC"),
     "baixa": PatternFill("solid", start_color="FCE4D6"),
@@ -253,6 +264,9 @@ class AdDetector:
 
         # Cache de cooldown: chave → último datetime de detecção
         self._recent_ads: dict[str, datetime.datetime] = {}
+
+        # Horário de início da sessão (preenchido em run())
+        self.start_time: datetime.datetime | None = None
 
         print("🔧 Carregando Silero VAD...")
         self.vad_model, utils = torch.hub.load(
@@ -285,15 +299,24 @@ class AdDetector:
         for i, w in enumerate([20, 15, 22, 22, 12, 60, 40], 1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
-        ws2 = wb.create_sheet("Resumo por Rádio")
+        # ── Resumo por Rádio (com colunas de sessão) ──────────────────────────
+        ws2    = wb.create_sheet("Resumo por Rádio")
         h2_font = Font(bold=True, color="FFFFFF", name="Arial")
         h2_fill = PatternFill("solid", start_color="2E75B6")
-        for col, h in enumerate(["Rádio", "Total de Anúncios", "Última Detecção"], 1):
+        resumo_headers = [
+            "Rádio", "Total de Anúncios", "Última Detecção",
+            "Início da Sessão", "Fim da Sessão", "Duração da Sessão",
+        ]
+        for col, h in enumerate(resumo_headers, 1):
             _cell_style(ws2.cell(row=1, column=col, value=h), font=h2_font, fill=h2_fill)
         ws2.column_dimensions["A"].width = 18
-        ws2.column_dimensions["B"].width = 18
-        ws2.column_dimensions["C"].width = 20
+        ws2.column_dimensions["B"].width = 20
+        ws2.column_dimensions["C"].width = 22
+        ws2.column_dimensions["D"].width = 22
+        ws2.column_dimensions["E"].width = 22
+        ws2.column_dimensions["F"].width = 22
 
+        # ── Resumo por Anunciante ─────────────────────────────────────────────
         ws3 = wb.create_sheet("Resumo por Anunciante")
         for col, h in enumerate(["Anunciante", "Total de Anúncios", "Última Detecção"], 1):
             _cell_style(ws3.cell(row=1, column=col, value=h), font=h2_font, fill=h2_fill)
@@ -301,8 +324,8 @@ class AdDetector:
         ws3.column_dimensions["B"].width = 20
         ws3.column_dimensions["C"].width = 20
 
-        # Adiciona filtros aos cabeçalhos iniciais
-        ws.auto_filter.ref = ws.dimensions
+        # Filtros
+        ws.auto_filter.ref  = ws.dimensions
         ws2.auto_filter.ref = ws2.dimensions
         ws3.auto_filter.ref = ws3.dimensions
 
@@ -330,24 +353,38 @@ class AdDetector:
                             align=Alignment(vertical="center", wrap_text=(col == 6)))
             ws.row_dimensions[row].height = 18
 
-            ws2 = wb["Resumo por Rádio"]
-            sr  = next((r for r in ws2.iter_rows(min_row=2) if r[0].value == station), None)
+            # ── Resumo por Rádio ──────────────────────────────────────────────
+            ws2       = wb["Resumo por Rádio"]
+            sr        = next((r for r in ws2.iter_rows(min_row=2) if r[0].value == station), None)
+            inicio_str = (self.start_time.strftime("%d/%m/%Y %H:%M:%S")
+                          if self.start_time else "—")
+
             if sr:
-                sr[1].value = (sr[1].value or 0) + 1
-                sr[2].value = br_display()
+                sr[1].value = (sr[1].value or 0) + 1   # Total de Anúncios
+                sr[2].value = br_display()              # Última Detecção
+                sr[3].value = inicio_str                # Início da Sessão
+                # sr[4] Fim e sr[5] Duração → preenchidos só ao encerrar
+                for cell in sr:
+                    cell.fill      = _WHITE_FILL
+                    cell.font      = _DATA_FONT_DARK
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
                 nr = ws2.max_row + 1
-                for col, val in enumerate([station, 1, br_display()], 1):
-                    ws2.cell(row=nr, column=col, value=val)
+                for col, val in enumerate(
+                    [station, 1, br_display(), inicio_str, "—", "—"], 1
+                ):
+                    c = ws2.cell(row=nr, column=col, value=val)
+                    c.fill      = _WHITE_FILL
+                    c.font      = _DATA_FONT_DARK
+                    c.alignment = Alignment(horizontal="center", vertical="center")
 
-            # --- Resumo por Anunciante ---
+            # ── Resumo por Anunciante ─────────────────────────────────────────
             anunciante_nome = info.get("anunciante")
             if anunciante_nome and anunciante_nome not in ("—", "Desconhecido"):
                 if "Resumo por Anunciante" not in wb.sheetnames:
                     wb.create_sheet("Resumo por Anunciante")
                 ws3 = wb["Resumo por Anunciante"]
-                
-                # Preenche cabeçalhos se a aba for nova
+
                 if ws3.max_row == 1 and not ws3.cell(row=1, column=1).value:
                     h2_font = Font(bold=True, color="FFFFFF", name="Arial")
                     h2_fill = PatternFill("solid", start_color="2E75B6")
@@ -361,20 +398,57 @@ class AdDetector:
                 if sr3:
                     sr3[1].value = (sr3[1].value or 0) + 1
                     sr3[2].value = br_display()
+                    for cell in sr3:
+                        cell.fill      = _WHITE_FILL
+                        cell.font      = _DATA_FONT_DARK
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
                 else:
                     nr3 = ws3.max_row + 1
                     for col, val in enumerate([anunciante_nome, 1, br_display()], 1):
-                        ws3.cell(row=nr3, column=col, value=val)
+                        c = ws3.cell(row=nr3, column=col, value=val)
+                        c.fill      = _WHITE_FILL
+                        c.font      = _DATA_FONT_DARK
+                        c.alignment = Alignment(horizontal="center", vertical="center")
                 ws3.auto_filter.ref = ws3.dimensions
 
-            # Aplica filtros nas demais abas atualizadas
-            ws.auto_filter.ref = ws.dimensions
+            ws.auto_filter.ref  = ws.dimensions
             ws2.auto_filter.ref = ws2.dimensions
 
             wb.save(self.report_path)
             print(f"  ✅ Excel salvo ({row - 1} anúncios)")
         except Exception as e:
             print(f"  ⚠️  Erro ao salvar Excel: {e}"); traceback.print_exc()
+
+    def _finalize_session_excel(self):
+        """Registra o horário de fim e a duração da sessão no Resumo por Rádio."""
+        if not self.start_time:
+            return
+        try:
+            wb      = load_workbook(self.report_path)
+            ws2     = wb["Resumo por Rádio"]
+            fim     = br_now()
+            fim_str = fim.strftime("%d/%m/%Y %H:%M:%S")
+            duracao = fim - self.start_time
+            total_s = int(duracao.total_seconds())
+            h, rem  = divmod(total_s, 3600)
+            m, s    = divmod(rem, 60)
+            dur_str = f"{h:02d}h {m:02d}m {s:02d}s"
+
+            for row in ws2.iter_rows(min_row=2):
+                if row[0].value:   # atualiza todas as rádios da sessão
+                    row[4].value = fim_str
+                    row[5].value = dur_str
+                    for cell in row:
+                        cell.fill      = _WHITE_FILL
+                        cell.font      = _DATA_FONT_DARK
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            wb.save(self.report_path)
+            print(f"  📋 Sessão finalizada: início={self.start_time.strftime('%H:%M:%S')} "
+                  f"fim={fim.strftime('%H:%M:%S')} duração={dur_str}")
+        except Exception as e:
+            print(f"  ⚠️  Erro ao finalizar sessão no Excel: {e}")
+            traceback.print_exc()
 
     # ── VAD ───────────────────────────────────────────────────────────────────
 
@@ -446,6 +520,9 @@ class AdDetector:
             f"   conversa casual, auto-promoção da própria rádio, vinhetas sem CTA.\n"
             f"7. Confiança 'alta' SOMENTE se houver CTA explícito E (preço OU telefone).\n"
             f"8. Sem CTA E sem preço/telefone → confiança máxima = 'media'.\n"
+            f"9. Telefone ou WhatsApp mencionado após o nome de um anunciante pertence ao\n"
+            f"   anúncio DESSE anunciante — NÃO é um anunciante separado. Nunca crie um\n"
+            f"   anunciante cujo nome seja um número de telefone ou 'Fone Whats'.\n"
             f"{nivel}\n\n"
             f"Exemplos corretos:\n"
             f'  {{"anunciante":"Ferreira Decorações","produto":"cortinas e tapetes","confianca":"media","trecho":"Ferreira Decorações, qualidade e estilo para sua casa"}}\n'
@@ -491,7 +568,6 @@ class AdDetector:
                 produto = (ad.get("produto") or "").strip() or None
                 if produto and produto.lower() in ("null", "none", ""):
                     produto = None
-                # Evita produto == anunciante (LLM às vezes espelha)
                 if produto and anunciante and produto.lower() == anunciante.lower():
                     produto = None
 
@@ -508,29 +584,25 @@ class AdDetector:
                     print("  ⬇️  Confiança rebaixada → baixa")
 
                 # ── Filtros de aceite ──
-                # Exige anunciante confirmado para qualquer confiança < alta,
-                # ou para alta sem âncora forte
                 if not anunciante:
                     if conf in ("baixa", "media"):
                         print(f"  ⛔ Descartado: sem anunciante confirmado (conf={conf})."); continue
                     if conf == "alta" and not has_strong_anchor:
                         print("  ⛔ Descartado: alta sem âncora e sem anunciante."); continue
 
-                # Deduplicação por anunciante no mesmo ciclo
                 chave = (anunciante or "").lower()
                 if chave and chave in seen_anunciantes:
                     print(f"  🔁 Anunciante duplicado no ciclo: {chave}"); continue
                 if chave:
                     seen_anunciantes.add(chave)
 
-                # Deduplicação por trecho similar no mesmo ciclo
                 if trecho:
                     if any(len(set(trecho.lower().split()) & set(t.lower().split())) > 4
                            for t in seen_trechos):
                         print(f"  🔁 Trecho duplicado: {trecho[:40]}..."); continue
                     seen_trechos.append(trecho)
 
-                # ── Cooldown global por anunciante (anti-spam entre ciclos) ──
+                # ── Cooldown global por anunciante ──
                 chave_tempo = (anunciante or trecho[:20] or "unknown").lower()
                 ultimo = self._recent_ads.get(chave_tempo)
                 if ultimo and (br_now() - ultimo).total_seconds() < AD_COOLDOWN_SECONDS:
@@ -538,7 +610,6 @@ class AdDetector:
                     continue
                 self._recent_ads[chave_tempo] = br_now()
 
-                # Promove baixa→media se score alto com anunciante confirmado
                 if conf == "baixa" and heur["ad_score"] >= 6 and anunciante:
                     conf = "media"
 
@@ -551,12 +622,9 @@ class AdDetector:
                                       "confianca": conf, "trecho": trecho})
 
             # ── Consolidação de varejista âncora ──────────────────────────────
-            # Se um dos aprovados é um varejista (supermercado, loja, clube…),
-            # as demais marcas do mesmo bloco são produtos dele, não anunciantes.
-            retail_ads  = [a for a in aprovados if is_retail_anchor(a.get("anunciante", ""), text)]
-            nonretail   = [a for a in aprovados if not is_retail_anchor(a.get("anunciante", ""), text)]
+            retail_ads = [a for a in aprovados if is_retail_anchor(a.get("anunciante", ""), text)]
+            nonretail  = [a for a in aprovados if not is_retail_anchor(a.get("anunciante", ""), text)]
             if retail_ads and nonretail:
-                # Agrupa marcas avulsas como produtos do varejista
                 extra = ", ".join(
                     filter(None, [b.get("anunciante") or b.get("produto") for b in nonretail])
                 )
@@ -566,7 +634,7 @@ class AdDetector:
                 print(f"  🏪 Varejista âncora: {len(nonretail)} marca(s) incorporada(s) como produto.")
                 aprovados = retail_ads
 
-            # Fallback heurístico se LLM não detectou nada mas o score é alto
+            # Fallback heurístico
             if not aprovados and heur["ad_score"] >= 7 and heur["has_price"] and heur["has_cta"]:
                 aprovados.append({"anunciante": None, "produto": None, "confianca": "baixa",
                                   "trecho": "", "motivo_curto": "Detectado por heurística"})
@@ -610,7 +678,6 @@ class AdDetector:
             print(f"  📊 [{name}] ad={heur['ad_score']} nonad={heur['nonad_score']} "
                   f"cta={heur['has_cta']} preço={heur['has_price']} vinheta={heur['is_vinheta']}")
 
-            # Passa station_name e text para filtrar auto-promoção
             motivo = should_skip(heur, station_name=name, text=snippet)
             if motivo:
                 print(f"  🎵 [{name}] Descartado: {motivo}."); return
@@ -644,6 +711,10 @@ class AdDetector:
         print(f"   Duração  : {RECORD_DURATION}s | Relatório: {os.path.abspath(self.report_path)}")
         print("   (Ctrl+C para parar)\n")
 
+        # Registra o horário de início da sessão
+        self.start_time = br_now()
+        print(f"   ⏱️  Sessão iniciada em: {self.start_time.strftime('%d/%m/%Y %H:%M:%S')}\n")
+
         work_queue = queue.Queue()
         stop_event = threading.Event()
         threads    = []
@@ -657,8 +728,9 @@ class AdDetector:
             t.start(); threads.append(t)
 
         print(f"  🎙️  {len(threads)} gravadores iniciados.\n")
+
         try:
-            while True:
+            while not stop_event.is_set():
                 try:
                     name, audio_file = work_queue.get(timeout=2)
                     print(f"\n{'─'*60}\n📥 [{name}] Novo áudio — {br_display()}")
@@ -668,8 +740,11 @@ class AdDetector:
                     continue
         except KeyboardInterrupt:
             print("\n\n🛑 Encerrando...")
+        finally:
             stop_event.set()
-            for t in threads: t.join(timeout=5)
+            for t in threads:
+                t.join(timeout=5)
+            self._finalize_session_excel()
             print("👋 Encerrado.")
 
 
