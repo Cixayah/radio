@@ -268,6 +268,11 @@ class AdDetector:
         # Horário de início da sessão (preenchido em run())
         self.start_time: datetime.datetime | None = None
 
+        # ── CORREÇÃO: rastreia a linha do Excel criada para cada rádio
+        #    nesta sessão. Chave = nome da rádio, Valor = número da linha.
+        #    Começa vazio a cada execução, garantindo novas linhas por sessão.
+        self._session_excel_rows: dict[str, int] = {}
+
         print("🔧 Carregando Silero VAD...")
         self.vad_model, utils = torch.hub.load(
             repo_or_dir="snakers4/silero-vad", model="silero_vad", trust_repo=True,
@@ -354,22 +359,27 @@ class AdDetector:
             ws.row_dimensions[row].height = 18
 
             # ── Resumo por Rádio ──────────────────────────────────────────────
-            ws2       = wb["Resumo por Rádio"]
-            sr        = next((r for r in ws2.iter_rows(min_row=2) if r[0].value == station), None)
+            # CORREÇÃO: usa _session_excel_rows para encontrar (ou criar) a linha
+            # desta sessão, em vez de pesquisar pelo nome da rádio — o que fazia
+            # sessões anteriores serem sobrescritas.
+            ws2        = wb["Resumo por Rádio"]
             inicio_str = (self.start_time.strftime("%d/%m/%Y %H:%M:%S")
                           if self.start_time else "—")
 
-            if sr:
+            row_idx = self._session_excel_rows.get(station)
+            if row_idx:
+                # A linha desta sessão já existe — apenas incrementa e atualiza
+                sr = list(ws2.iter_rows(min_row=row_idx, max_row=row_idx))[0]
                 sr[1].value = (sr[1].value or 0) + 1   # Total de Anúncios
                 sr[2].value = br_display()              # Última Detecção
-                sr[3].value = inicio_str                # Início da Sessão
-                # sr[4] Fim e sr[5] Duração → preenchidos só ao encerrar
                 for cell in sr:
                     cell.fill      = _WHITE_FILL
                     cell.font      = _DATA_FONT_DARK
                     cell.alignment = Alignment(horizontal="center", vertical="center")
             else:
+                # Primeira detecção desta rádio nesta sessão → cria nova linha
                 nr = ws2.max_row + 1
+                self._session_excel_rows[station] = nr  # memoriza para updates futuros
                 for col, val in enumerate(
                     [station, 1, br_display(), inicio_str, "—", "—"], 1
                 ):
@@ -420,8 +430,8 @@ class AdDetector:
             print(f"  ⚠️  Erro ao salvar Excel: {e}"); traceback.print_exc()
 
     def _finalize_session_excel(self):
-        """Registra o horário de fim e a duração da sessão no Resumo por Rádio."""
-        if not self.start_time:
+        """Registra o horário de fim e a duração apenas nas linhas desta sessão."""
+        if not self.start_time or not self._session_excel_rows:
             return
         try:
             wb      = load_workbook(self.report_path)
@@ -434,14 +444,16 @@ class AdDetector:
             m, s    = divmod(rem, 60)
             dur_str = f"{h:02d}h {m:02d}m {s:02d}s"
 
-            for row in ws2.iter_rows(min_row=2):
-                if row[0].value:   # atualiza todas as rádios da sessão
-                    row[4].value = fim_str
-                    row[5].value = dur_str
-                    for cell in row:
-                        cell.fill      = _WHITE_FILL
-                        cell.font      = _DATA_FONT_DARK
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
+            # CORREÇÃO: itera apenas sobre as linhas criadas nesta sessão,
+            # deixando intactos os registros de sessões anteriores.
+            for station, row_idx in self._session_excel_rows.items():
+                row = list(ws2.iter_rows(min_row=row_idx, max_row=row_idx))[0]
+                row[4].value = fim_str   # Fim da Sessão
+                row[5].value = dur_str   # Duração da Sessão
+                for cell in row:
+                    cell.fill      = _WHITE_FILL
+                    cell.font      = _DATA_FONT_DARK
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
 
             wb.save(self.report_path)
             print(f"  📋 Sessão finalizada: início={self.start_time.strftime('%H:%M:%S')} "
