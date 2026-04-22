@@ -303,9 +303,17 @@ class AdDetector:
             if os.path.exists(audio_file):
                 os.remove(audio_file)
 
-    def run(self):
+    def run(self, stop_event=None, active_stations=None, station_pause_events=None):
+        if stop_event is None:
+            stop_event = threading.Event()
+
+        if active_stations is None:
+            active_stations = dict(STATIONS)
+        if station_pause_events is None:
+            station_pause_events = {}
+
         print("🚀 Monitoramento iniciado...")
-        print(f"   Rádios   : {', '.join(STATIONS.keys())}")
+        print(f"   Rádios   : {', '.join(active_stations.keys())}")
         print(f"   Duração  : {RECORD_DURATION}s | Relatório: {os.path.abspath(self.report_path)}")
         print("   (Ctrl+C para parar)\n")
 
@@ -313,13 +321,19 @@ class AdDetector:
         print(f"   ⏱️  Sessão iniciada em: {self.start_time.strftime('%d/%m/%Y %H:%M:%S')}\n")
 
         work_queue = queue.Queue()
-        stop_event = threading.Event()
         threads = []
 
-        for name, url in STATIONS.items():
+        for name, url in active_stations.items():
             t = threading.Thread(
                 target=recorder_worker,
-                args=(name, url, self.audio_path, work_queue, stop_event),
+                args=(
+                    name,
+                    url,
+                    self.audio_path,
+                    work_queue,
+                    stop_event,
+                    station_pause_events.get(name),
+                ),
                 daemon=True,
                 name=f"rec-{name}",
             )

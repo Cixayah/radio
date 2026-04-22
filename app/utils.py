@@ -14,6 +14,12 @@ TRANSCRIPTION_FIXES = {
     "pony watts": "Fone Whats",
     "pony wats": "Fone Whats",
     "ponywatts": "Fone Whats",
+    "Se Crede": "Sicredi",
+    "Magate": "Magatti",
+    "Clube do Precinho": "Antunes",
+    "Presti Monte": "Prestmont",
+    "WEG": "Netflex",
+    
 }
 
 

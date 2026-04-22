@@ -1,6 +1,6 @@
 # Radio Ad Detector
 
-Detector automatizado de anúncios em rádios online brasileiras.
+Detector automatizado de anúncios em rádios online brasileiras com interface gráfica simples para monitoramento.
 
 O projeto captura áudio em ciclos, aplica VAD (detecção de fala), transcreve com Whisper via Groq, classifica trechos com regras + LLM e salva:
 
@@ -95,7 +95,21 @@ GROQ_API_KEY=sua_chave_aqui
 python main.py
 ```
 
-Durante a execução, você verá no terminal:
+Esse comando abre a interface gráfica. Se preferir o modo de terminal, use:
+
+```bash
+python main.py --cli
+```
+
+Na interface gráfica, você pode:
+
+- iniciar e parar a captura com um clique
+- pausar e retomar rádios individualmente durante a execução
+- escolher quais rádios entram no monitoramento antes de iniciar
+- acompanhar os logs em tempo real
+- abrir a pasta `radio_capture/`
+
+No modo de terminal, você verá no terminal:
 
 - status dos gravadores
 - pontuação heurística dos trechos
@@ -112,6 +126,29 @@ As saídas ficam em `radio_capture/`:
 - `detected_ads/`: anúncios salvos como MP3
 - `logs/`: espaço reservado para logs
 - `relatorio_anuncios.xlsx`: relatório principal
+
+## Executável no Windows
+
+O projeto inclui o arquivo `build_exe.bat` para gerar um executável com PyInstaller.
+
+1. Instale as dependências:
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Execute o build:
+
+```bat
+build_exe.bat
+```
+
+O executável será gerado em `dist/RadioAdDetector/RadioAdDetector.exe`.
+
+Se existir um arquivo `.env` na raiz no momento do build, ele será empacotado junto ao app para facilitar o envio ao usuário final.
+
+> Observação: o modo `--onedir` abre mais rápido e evita o custo de extração do `--onefile`,
+> deixando a experiência mais leve na execução.
 
 ### Abas do Excel
 
@@ -138,6 +175,8 @@ STATIONS = {
     "Minha_Radio": "https://meu-stream/ao-vivo",
 }
 ```
+
+Depois de iniciar pela interface, você pode pausar/retomar cada rádio pelo painel de gerenciamento sem precisar encerrar o monitoramento.
 
 ## Solução de Problemas
 
