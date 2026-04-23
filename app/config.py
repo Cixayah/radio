@@ -8,6 +8,9 @@ from groq import Groq
 STATIONS = {
     "Band_FM": "https://stm.alphanetdigital.com.br:7040/band",
     "Ondas_Verdes": "https://live3.livemus.com.br:6922/stream",
+    "Vox_FM": "https://streaming.inweb.com.br/vox-catanduva",
+    "Clube_FM": "https://8157.brasilstream.com.br/stream?1776957572681",
+    "Vida_FM": "https://streaming.inweb.com.br/vox-vida",
     "Nativa_FM": "https://s41.maxcast.com.br:8172/live",
     "Atividade": "https://streaming.inweb.com.br/atividade",
 }

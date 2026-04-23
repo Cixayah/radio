@@ -44,6 +44,9 @@ class RadioMonitorApp:
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
 
+        self.station_list_height = 96
+        self.log_panel_min_height = 170
+
         self.log_queue = queue.Queue()
         self.stop_event = threading.Event()
         self.worker_thread = None
@@ -70,6 +73,7 @@ class RadioMonitorApp:
 
         self._configure_style()
         self._build_ui()
+        self._center_window()
         self._append_log("[INFO] Interface pronta. Aguardando início da captura.\n")
         self.root.after(120, self._poll_logs)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -116,35 +120,47 @@ class RadioMonitorApp:
         outer = tk.Frame(self.root, bg=BG)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(3, weight=1)
+        outer.rowconfigure(2, weight=1)
 
         hero = tk.Frame(outer, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         hero.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
         hero.columnconfigure(0, weight=1)
         hero.columnconfigure(1, weight=0)
+        hero.rowconfigure(1, weight=1)
 
-        top_strip = tk.Frame(hero, bg=RED, height=6)
+        top_strip = tk.Frame(hero, bg=RED, height=5)
         top_strip.grid(row=0, column=0, columnspan=2, sticky="ew")
 
-        left = tk.Frame(hero, bg=CARD_BG, padx=14, pady=12)
-        left.grid(row=1, column=0, sticky="ew")
-        left.columnconfigure(0, weight=1)
+        # Primary live log area in the top section (requested in the highlighted area).
+        top_log_frame = tk.Frame(hero, bg=CARD_BG, padx=12, pady=8)
+        top_log_frame.grid(row=1, column=0, sticky="nsew")
+        top_log_frame.rowconfigure(0, weight=1)
+        top_log_frame.columnconfigure(0, weight=1)
 
-        tk.Label(left, text="Radio Ad Detector", bg=CARD_BG, fg=TEXT, font=("Segoe UI", 16, "bold")).grid(
-            row=0, column=0, sticky="w"
+        self.log_text = tk.Text(
+            top_log_frame,
+            wrap="word",
+            height=7,
+            borderwidth=0,
+            padx=12,
+            pady=10,
+            bg="#fafafa",
+            fg=TEXT,
+            insertbackground=TEXT,
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            font=("Consolas", 10),
         )
-        tk.Label(
-            left,
-            text="Monitoramento de anúncios em rádio com capturas, logs e relatório em uma interface mais limpa.",
-            bg=CARD_BG,
-            fg=MUTED,
-            font=("Segoe UI", 9),
-            wraplength=500,
-            justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        self.log_text.configure(state="disabled")
 
-        status_card = tk.Frame(hero, bg=RED_LIGHT, padx=12, pady=10)
-        status_card.grid(row=1, column=1, sticky="e", padx=12, pady=10)
+        top_log_scrollbar = ttk.Scrollbar(top_log_frame, orient="vertical", command=self.log_text.yview)
+        top_log_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.log_text.configure(yscrollcommand=top_log_scrollbar.set)
+
+        status_card = tk.Frame(hero, bg=RED_LIGHT, padx=12, pady=7)
+        status_card.grid(row=1, column=1, sticky="ns", padx=(0, 12), pady=7)
         tk.Label(status_card, text="STATUS", bg=RED_LIGHT, fg=RED, font=("Segoe UI", 9, "bold")).grid(
             row=0, column=0, sticky="e"
         )
@@ -183,8 +199,9 @@ class RadioMonitorApp:
         self._build_stat_card(stats, 2, "Relatório Excel", self.report_var)
 
         controls = tk.Frame(outer, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
-        controls.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 6))
+        controls.grid(row=2, column=0, sticky="nsew", padx=12, pady=(12, 12))
         controls.columnconfigure(0, weight=1)
+        controls.rowconfigure(2, weight=1)
 
         button_row = tk.Frame(controls, bg=CARD_BG, padx=10, pady=8)
         button_row.grid(row=0, column=0, sticky="w")
@@ -216,55 +233,18 @@ class RadioMonitorApp:
             bg=CARD_BG,
             fg=MUTED,
             font=("Segoe UI", 8),
-        ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
 
         self._build_station_manager(controls)
 
-        body = tk.Frame(outer, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
-        body.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        body.rowconfigure(1, weight=1)
-        body.columnconfigure(0, weight=1)
-
-        header = tk.Frame(body, bg=CARD_BG, padx=12, pady=10)
-        header.grid(row=0, column=0, sticky="ew")
-        tk.Label(header, text="Log de execução", bg=CARD_BG, fg=TEXT, font=("Segoe UI", 12, "bold")).grid(
-            row=0, column=0, sticky="w"
-        )
-
-        log_frame = tk.Frame(body, bg=CARD_BG, padx=10, pady=8)
-        log_frame.grid(row=1, column=0, sticky="nsew")
-        log_frame.rowconfigure(0, weight=1)
-        log_frame.columnconfigure(0, weight=1)
-
-        self.log_text = tk.Text(
-            log_frame,
-            wrap="word",
-            height=8,
-            borderwidth=0,
-            padx=12,
-            pady=10,
-            bg="#fafafa",
-            fg=TEXT,
-            insertbackground=TEXT,
-            relief="flat",
-            highlightthickness=1,
-            highlightbackground=BORDER,
-            font=("Consolas", 10),
-        )
-        self.log_text.grid(row=0, column=0, sticky="nsew")
-        self.log_text.configure(state="disabled")
-
-        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        self.log_text.configure(yscrollcommand=scrollbar.set)
-
     def _build_station_manager(self, parent):
         station_box = tk.Frame(parent, bg="#fafafa", highlightthickness=1, highlightbackground=BORDER)
-        station_box.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 6))
+        station_box.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 4))
         station_box.columnconfigure(0, weight=1)
+        station_box.rowconfigure(2, weight=1)
 
         tk.Label(station_box, text="Rádios monitoradas", bg="#fafafa", fg=TEXT, font=("Segoe UI", 9, "bold")).grid(
-            row=0, column=0, sticky="w", padx=10, pady=(6, 2)
+            row=0, column=0, sticky="w", padx=10, pady=(4, 1)
         )
         tk.Label(
             station_box,
@@ -272,13 +252,42 @@ class RadioMonitorApp:
             bg="#fafafa",
             fg=MUTED,
             font=("Segoe UI", 8),
-        ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 4))
+        ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 2))
 
-        list_holder = tk.Frame(station_box, bg="#fafafa")
-        list_holder.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 6))
+        # Keep the station section at a stable height so the log panel remains visible.
+        list_area = tk.Frame(station_box, bg="#fafafa")
+        list_area.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 4))
+        list_area.columnconfigure(0, weight=1)
+        list_area.rowconfigure(0, weight=1)
+
+        list_canvas = tk.Canvas(
+            list_area,
+            bg="#fafafa",
+            height=self.station_list_height,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        list_canvas.grid(row=0, column=0, sticky="nsew")
+
+        list_scrollbar = ttk.Scrollbar(list_area, orient="vertical", command=list_canvas.yview)
+        list_scrollbar.grid(row=0, column=1, sticky="ns")
+        list_canvas.configure(yscrollcommand=list_scrollbar.set)
+
+        list_holder = tk.Frame(list_canvas, bg="#fafafa")
         list_holder.columnconfigure(0, weight=1)
         list_holder.columnconfigure(1, weight=0)
         list_holder.columnconfigure(2, weight=0)
+
+        canvas_window = list_canvas.create_window((0, 0), window=list_holder, anchor="nw")
+
+        def _sync_scroll_region(_event=None):
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+
+        def _fit_holder_width(event):
+            list_canvas.itemconfigure(canvas_window, width=event.width)
+
+        list_holder.bind("<Configure>", _sync_scroll_region)
+        list_canvas.bind("<Configure>", _fit_holder_width)
 
         for idx, station in enumerate(STATIONS):
             chk = tk.Checkbutton(
@@ -314,6 +323,8 @@ class RadioMonitorApp:
             )
             btn.grid(row=idx, column=2, sticky="e", pady=1)
             self.station_pause_buttons[station] = btn
+
+        _sync_scroll_region()
 
     def _build_stat_card(self, parent, column, title, value_var):
         padx = (0, 10) if column < 2 else (0, 0)
@@ -450,6 +461,19 @@ class RadioMonitorApp:
         if len(candidate) > max_chars:
             candidate = f"...{os.sep}{os.path.basename(normalized)}"
         return candidate
+
+    def _center_window(self):
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        if width <= 1 or height <= 1:
+            width, height = 900, 620
+
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = max((screen_width - width) // 2, 0)
+        y = max((screen_height - height) // 2, 0)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def _format_elapsed(self, seconds):
         hours, remainder = divmod(int(seconds), 3600)
