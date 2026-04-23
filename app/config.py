@@ -9,6 +9,7 @@ STATIONS = {
     "Band_FM": "https://stm.alphanetdigital.com.br:7040/band",
     "Ondas_Verdes": "https://live3.livemus.com.br:6922/stream",
     "Nativa_FM": "https://s41.maxcast.com.br:8172/live",
+    "Atividade": "https://streaming.inweb.com.br/atividade",
 }
 
 RECORD_DURATION = 60
