@@ -356,7 +356,7 @@ class AdDetector:
         finally:
             stop_event.set()
             for t in threads:
-                t.join(timeout=5)
+                t.join()
             self.excel.finalize_session_excel(
                 start_time=self.start_time,
                 session_excel_rows=self._session_excel_rows,

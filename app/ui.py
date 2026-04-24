@@ -56,6 +56,8 @@ class RadioMonitorApp:
         self.session_started_at = None
         self.session_timer_after_id = None
         self.session_timer_running = False
+        self.log_poll_after_id = None
+        self.is_closing = False
         self.station_pause_events = {name: threading.Event() for name in STATIONS}
         self.station_enabled_vars = {name: tk.BooleanVar(value=True) for name in STATIONS}
         self.station_status_vars = {name: tk.StringVar(value="Ativa") for name in STATIONS}
@@ -75,7 +77,7 @@ class RadioMonitorApp:
         self._build_ui()
         self._center_window()
         self._append_log("[INFO] Interface pronta. Aguardando início da captura.\n")
-        self.root.after(120, self._poll_logs)
+        self.log_poll_after_id = self.root.after(120, self._poll_logs)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _configure_style(self):
@@ -508,6 +510,9 @@ class RadioMonitorApp:
         self.session_timer_after_id = self.root.after(1000, self._update_session_timer)
 
     def _poll_logs(self):
+        if not self.root.winfo_exists():
+            return
+
         try:
             while True:
                 text = self.log_queue.get_nowait()
@@ -521,15 +526,43 @@ class RadioMonitorApp:
             self.status_var.set("Encerrando")
             self.detail_var.set("Aguardando finalização dos gravadores e exportações.")
 
-        self.root.after(120, self._poll_logs)
+        self.log_poll_after_id = self.root.after(120, self._poll_logs)
+
+    def _cancel_log_poll(self):
+        if self.log_poll_after_id is not None:
+            try:
+                self.root.after_cancel(self.log_poll_after_id)
+            except Exception:
+                pass
+            self.log_poll_after_id = None
+
+    def _finalize_close(self):
+        self._cancel_log_poll()
+        self._stop_session_timer()
+        if self.root.winfo_exists():
+            self.root.destroy()
 
     def _on_close(self):
-        self.stop_monitoring()
-        if self.worker_thread and self.worker_thread.is_alive():
-            self.root.after(250, self._on_close)
+        if not self.root.winfo_exists():
             return
-        self._stop_session_timer()
-        self.root.destroy()
+
+        if self.is_closing:
+            if self.worker_thread and self.worker_thread.is_alive():
+                return
+            self._finalize_close()
+            return
+
+        self.is_closing = True
+        self.stop_monitoring()
+        self.status_var.set("Encerrando")
+        self.detail_var.set("Aguardando encerramento seguro para fechar a janela.")
+        self._set_buttons(running=True)
+
+        if self.worker_thread and self.worker_thread.is_alive():
+            self.root.after(200, self._on_close)
+            return
+
+        self._finalize_close()
 
 
 def launch_app():
