@@ -4,11 +4,9 @@ import os
 import queue
 import re
 import shutil
+import subprocess
 import threading
 import traceback
-
-import librosa
-import torch
 
 from .config import (
     AD_COOLDOWN_SECONDS,
@@ -19,11 +17,13 @@ from .config import (
     RECORD_DURATION,
     STATIONS,
     TRANSCRIPTION_CAP,
-    groq_client,
+    VAD_SILENCE_MIN_DURATION,
+    VAD_SILENCE_NOISE_DB,
+    get_groq_client,
 )
 from .excel_report import ExcelReportManager
 from .heuristics import heuristic_score, is_retail_anchor, name_in_text, should_skip
-from .recorder import recorder_worker
+from .recorder import _resolve_ffmpeg_cmd, recorder_worker
 from .utils import br_display, br_now, br_timestamp, fix_transcription, safe_filename
 
 
@@ -42,37 +42,109 @@ class AdDetector:
         self.start_time: datetime.datetime | None = None
         self._session_excel_rows: dict[str, int] = {}
         self.excel = ExcelReportManager(self.report_path)
+        self.ffmpeg_cmd = _resolve_ffmpeg_cmd()
 
-        print("🔧 Carregando Silero VAD...")
-        self.vad_model, utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad", model="silero_vad", trust_repo=True,
-        )
-        self.get_speech_timestamps = utils[0]
+        print("🔧 Inicializando VAD leve via FFmpeg (silencedetect)...")
+        if not self.ffmpeg_cmd:
+            print("  ⚠️  FFmpeg não encontrado para VAD. A análise de fala ficará permissiva.")
+
+        # Validates API key only when detector is started, avoiding import-time crash in the GUI executable.
+        self.groq_client = get_groq_client()
+
         print(f"☁️  Groq | Whisper: {GROQ_WHISPER_MODEL} | LLM: {GROQ_LLM_MODEL} | Ciclo: {RECORD_DURATION}s")
         self.excel.init_excel()
         print("✅ Pronto.\n")
 
+    @staticmethod
+    def _parse_duration_seconds(ffmpeg_log: str) -> float:
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", ffmpeg_log)
+        if not m:
+            return 0.0
+        hours = int(m.group(1))
+        minutes = int(m.group(2))
+        seconds = float(m.group(3))
+        return hours * 3600 + minutes * 60 + seconds
+
     def analyze_vad(self, file_path) -> dict | None:
+        if not self.ffmpeg_cmd:
+            # Fallback permissivo para não bloquear o pipeline se FFmpeg não estiver resolvido aqui.
+            return {"speech_ratio": 1.0, "fragments": 1}
+
         try:
-            y, sr = librosa.load(file_path, sr=16000)
-            segs = self.get_speech_timestamps(
-                torch.from_numpy(y).float(), self.vad_model, sampling_rate=16000,
+            startupinfo = None
+            creationflags = 0
+            if os.name == "nt":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                creationflags = subprocess.CREATE_NO_WINDOW
+
+            cmd = [
+                self.ffmpeg_cmd,
+                "-hide_banner",
+                "-nostats",
+                "-i",
+                file_path,
+                "-af",
+                f"silencedetect=noise={VAD_SILENCE_NOISE_DB}dB:d={VAD_SILENCE_MIN_DURATION}",
+                "-f",
+                "null",
+                "-",
+            ]
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
             )
-            if not segs:
+            log = (proc.stderr or "") + "\n" + (proc.stdout or "")
+
+            duration = self._parse_duration_seconds(log)
+            if duration <= 0:
+                duration = float(RECORD_DURATION)
+
+            starts = [float(v) for v in re.findall(r"silence_start:\s*([0-9.]+)", log)]
+            ends = [float(v) for v in re.findall(r"silence_end:\s*([0-9.]+)", log)]
+
+            silence_intervals = []
+            for idx, start in enumerate(starts):
+                end = ends[idx] if idx < len(ends) else duration
+                if end > start:
+                    silence_intervals.append((max(0.0, start), min(duration, end)))
+
+            silence_intervals.sort(key=lambda x: x[0])
+            merged = []
+            for start, end in silence_intervals:
+                if not merged or start > merged[-1][1]:
+                    merged.append([start, end])
+                else:
+                    merged[-1][1] = max(merged[-1][1], end)
+
+            total_silence = sum(max(0.0, end - start) for start, end in merged)
+            total_speech = max(0.0, duration - total_silence)
+            ratio = total_speech / duration if duration > 0 else 0.0
+
+            speech_segments = 0
+            cursor = 0.0
+            for start, end in merged:
+                if start - cursor >= 0.08:
+                    speech_segments += 1
+                cursor = max(cursor, end)
+            if duration - cursor >= 0.08:
+                speech_segments += 1
+
+            if ratio < MIN_SPEECH_RATIO or speech_segments < MIN_SPEECH_SEGS:
                 return None
-            total_speech = sum((s["end"] - s["start"]) / sr for s in segs)
-            ratio = total_speech / (len(y) / sr)
-            if ratio < MIN_SPEECH_RATIO or len(segs) < MIN_SPEECH_SEGS:
-                return None
-            return {"speech_ratio": ratio, "fragments": len(segs)}
+            return {"speech_ratio": ratio, "fragments": speech_segments}
         except Exception as e:
             print(f"  ⚠️  Erro VAD: {e}")
-            return None
+            return {"speech_ratio": 1.0, "fragments": 1}
 
     def transcribe(self, file_path) -> str:
         try:
             with open(file_path, "rb") as f:
-                r = groq_client.audio.transcriptions.create(
+                r = self.groq_client.audio.transcriptions.create(
                     file=(os.path.basename(file_path), f),
                     model=GROQ_WHISPER_MODEL, language="pt", response_format="text",
                 )
@@ -131,7 +203,7 @@ class AdDetector:
         )
 
         try:
-            resp = groq_client.chat.completions.create(
+            resp = self.groq_client.chat.completions.create(
                 model=GROQ_LLM_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
@@ -181,13 +253,22 @@ class AdDetector:
                     conf = "baixa"
                     print("  ⬇️  Confiança rebaixada → baixa")
 
+                # In noisy transcriptions, LLM may under-rate obvious ads.
+                if conf == "baixa" and anunciante and (
+                    heur["ad_score"] >= 4 or has_strong_anchor or (heur["has_cta"] and heur["has_phone"])
+                ):
+                    conf = "media"
+                    print("  ⬆️  Confiança promovida por âncoras comerciais fortes.")
+
                 if not anunciante:
-                    if conf in ("baixa", "media"):
+                    if conf in ("baixa", "media") and not (has_strong_anchor and heur["ad_score"] >= 5):
                         print(f"  ⛔ Descartado: sem anunciante confirmado (conf={conf}).")
                         continue
                     if conf == "alta" and not has_strong_anchor:
                         print("  ⛔ Descartado: alta sem âncora e sem anunciante.")
                         continue
+                    if conf == "media" and has_strong_anchor and heur["ad_score"] >= 5:
+                        print("  ✅ Aceito sem anunciante por âncora comercial forte.")
 
                 chave = (anunciante or "").lower()
                 if chave and chave in seen_anunciantes:
@@ -251,11 +332,11 @@ class AdDetector:
     def process_item(self, name, audio_file):
         try:
             vad = self.analyze_vad(audio_file)
-            if not vad:
-                print(f"  🎵 [{name}] Ignorado (pouca fala)")
-                return
-
-            print(f"  🔍 [{name}] Transcrevendo... (speech={vad['speech_ratio']:.0%}, frags={vad['fragments']})")
+            low_speech = vad is None
+            if low_speech:
+                print(f"  ⚠️  [{name}] Pouca fala no VAD — validando por transcrição antes de descartar.")
+            else:
+                print(f"  🔍 [{name}] Transcrevendo... (speech={vad['speech_ratio']:.0%}, frags={vad['fragments']})")
 
             full_text = self.transcribe(audio_file)
             full_text = fix_transcription(full_text)
@@ -264,6 +345,15 @@ class AdDetector:
             if not snippet:
                 print(f"  ⚠️  [{name}] Transcrição vazia.")
                 return
+
+            # Fallback para ambientes onde o VAD pode ficar conservador demais:
+            # só descarta "pouca fala" quando a própria transcrição também vier curta.
+            if low_speech:
+                spoken_chars = len(re.sub(r"\s+", "", snippet))
+                if spoken_chars < 40:
+                    print(f"  🎵 [{name}] Ignorado (pouca fala confirmada pela transcrição curta).")
+                    return
+                print(f"  ✅ [{name}] VAD conservador contornado (texto útil detectado: {spoken_chars} chars).")
 
             heur = heuristic_score(snippet)
             print(f"  📊 [{name}] ad={heur['ad_score']} nonad={heur['nonad_score']} "

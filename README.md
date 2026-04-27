@@ -11,7 +11,7 @@ O projeto captura áudio em ciclos, aplica VAD (detecção de fala), transcreve 
 ## Como Funciona
 
 1. Gravadores paralelos capturam streams das rádios configuradas em janelas de 60s.
-2. Cada áudio passa por VAD (Silero) para descartar trechos com pouca fala.
+2. Cada áudio passa por VAD leve (FFmpeg `silencedetect`) para descartar trechos com pouca fala.
 3. O áudio é transcrito (Groq Whisper).
 4. Heurísticas identificam sinais de anúncio (CTA, preço, telefone, contexto comercial).
 5. Um LLM (Groq) classifica e estrutura os anúncios detectados.
@@ -49,6 +49,12 @@ ffmpeg -version
 ```
 
 Se o comando não for encontrado, instale o FFmpeg e adicione ao PATH do sistema.
+
+Alternativas suportadas pelo app (sem depender de PATH):
+
+- Definir variável de ambiente `FFMPEG_PATH` apontando para o executável.
+- Colocar `ffmpeg.exe` em `bin/ffmpeg.exe` na raiz do projeto (modo desenvolvimento).
+- No executável empacotado, manter `ffmpeg.exe` na mesma pasta do `.exe`.
 
 ## Instalação
 
@@ -129,7 +135,9 @@ As saídas ficam em `radio_capture/`:
 
 ## Executável no Windows
 
-O projeto inclui o arquivo `build_exe.bat` para gerar um executável com PyInstaller.
+O projeto inclui scripts de build para gerar um executável com PyInstaller.
+
+### Build padrão
 
 1. Instale as dependências:
 
@@ -137,17 +145,45 @@ O projeto inclui o arquivo `build_exe.bat` para gerar um executável com PyInsta
 pip install -r requirements.txt
 ```
 
-2. Execute o build:
+2. Execute o build (se ffmpeg não estiver disponível, use o build leve):
 
 ```bat
 build_exe.bat
 ```
 
-O executável será gerado em `dist/RadioAdDetector/RadioAdDetector.exe`.
+O executável será gerado em `dist/RadioAdDetector.exe`.
+
+### Build Leve (reduzir tamanho e empacotar ffmpeg)
+
+Este é o build recomendado para distribuição a outras máquinas, pois:
+- Cria um ambiente isolado de build
+- Empacotar ffmpeg junto (sem dependência de instalação global)
+- Reduz o tamanho final com otimizações agressivas
+
+```bat
+build_exe_light.bat
+```
+
+Saídas:
+- `dist/RadioAdDetector.exe` — Executável principal
+- `dist/_internal/` — Dependências do app (inclui ffmpeg em `_internal/bin/ffmpeg.exe`)
+
+### Resolução de FFmpeg
+
+O app procura ffmpeg nesta ordem:
+1. Variável de ambiente `FFMPEG_PATH` (se definida)
+2. FFmpeg no `PATH` do sistema
+3. Pasta `bin/ffmpeg.exe` da distribuição (empacotado no build leve)
+4. `_internal/bin/ffmpeg.exe` quando rodando como executável congelado
+
+Se rodar em outra máquina e não tiver ffmpeg:
+- **Opção 1 (recomendado):** Distribua a pasta `dist` completa (`RadioAdDetector.exe` + `_internal`) — ffmpeg já está incluído
+- **Opção 2:** Instale ffmpeg no sistema (`choco install ffmpeg` ou baixar de ffmpeg.org)
+- **Opção 3:** Defina `FFMPEG_PATH=C:\caminho\para\ffmpeg.exe` e execute o `.exe`
 
 Se existir um arquivo `.env` na raiz no momento do build, ele será empacotado junto ao app para facilitar o envio ao usuário final.
 
-> Observação: o modo `--onedir` abre mais rápido e evita o custo de extração do `--onefile`,
+> **Nota:** O modo `--onedir` abre mais rápido e evita o custo de extração do `--onefile`,
 > deixando a experiência mais leve na execução.
 
 ### Abas do Excel

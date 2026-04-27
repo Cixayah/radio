@@ -85,7 +85,15 @@ def should_skip(heur: dict, station_name: str = "", text: str = "") -> str | Non
         return "vinheta/patrocínio sem CTA ou preço"
     if heur["is_fp_chat"] and not heur["has_price"] and not heur["has_cta"]:
         return "conversa em 1ª pessoa sem preço/CTA"
-    if station_name and text and name_in_text(station_name, text) and not heur["has_price"]:
+    # Avoid discarding legitimate ads that mention the station name but also carry CTA/phone signals.
+    if (
+        station_name
+        and text
+        and name_in_text(station_name, text)
+        and not heur["has_price"]
+        and not heur["has_cta"]
+        and not heur["has_phone"]
+    ):
         return "auto-promoção da rádio"
     return None
 

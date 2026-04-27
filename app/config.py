@@ -1,6 +1,6 @@
 import os
 import sys
-from zoneinfo import ZoneInfo
+from datetime import timedelta, timezone
 
 from dotenv import load_dotenv
 from groq import Groq
@@ -18,8 +18,11 @@ STATIONS = {
 RECORD_DURATION = 60
 GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 GROQ_LLM_MODEL = "llama-3.1-8b-instant"
-MIN_SPEECH_RATIO = 0.40
-MIN_SPEECH_SEGS = 3
+# VAD sensitivity tuned for noisy/uneven radio streams.
+MIN_SPEECH_RATIO = 0.12
+MIN_SPEECH_SEGS = 1
+VAD_SILENCE_NOISE_DB = -45
+VAD_SILENCE_MIN_DURATION = 0.30
 TRANSCRIPTION_CAP = 3000
 AD_COOLDOWN_SECONDS = 90
 
@@ -63,9 +66,32 @@ def _load_env_files() -> list[str]:
 
 _LOADED_ENV_PATHS = _load_env_files()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    searched = ", ".join(_LOADED_ENV_PATHS) if _LOADED_ENV_PATHS else "nenhum .env encontrado"
-    raise ValueError(f"❌ GROQ_API_KEY não encontrada! Caminhos verificados: {searched}")
+_groq_client: Groq | None = None
 
-groq_client = Groq(api_key=GROQ_API_KEY)
-TZ_BR = ZoneInfo("America/Sao_Paulo")
+
+def _groq_key_error_message() -> str:
+    loaded_envs = ", ".join(_LOADED_ENV_PATHS) if _LOADED_ENV_PATHS else "nenhum .env encontrado"
+    return (
+        "❌ GROQ_API_KEY não encontrada! "
+        f"Caminhos verificados: {loaded_envs}. "
+        "Defina a variável de ambiente GROQ_API_KEY no sistema "
+        "ou crie um arquivo .env ao lado do executável com GROQ_API_KEY=..."
+    )
+
+
+def get_groq_client() -> Groq:
+    global _groq_client
+
+    if _groq_client is not None:
+        return _groq_client
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError(_groq_key_error_message())
+
+    _groq_client = Groq(api_key=api_key)
+    return _groq_client
+
+
+# Fixed Brazil timezone (UTC-3) to avoid shipping tzdata database in the executable.
+TZ_BR = timezone(timedelta(hours=-3), name="BRT")
