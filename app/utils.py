@@ -27,6 +27,7 @@ TRANSCRIPTION_FIXES = {
     "WEG": "Netflex",
     "Clube Max": "Max Atacadista",
     "Cleopresentes": "Cléo Presentes",
+    "Proença Supermercados": "Proença",
     
 }
 
