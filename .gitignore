@@ -9,8 +9,5 @@ dist
 build
 __pycache__
 app/__pycache__
-<<<<<<< HEAD
-ffmeg.exe
-=======
+bin/ffmpeg.exe
 ffmpeg.exe
->>>>>>> 4bf697a8d8fe9132cc7cad7b8c8abfe4a66456d6

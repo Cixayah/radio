@@ -1,0 +1,81 @@
+================================================
+  Build - RadioAdDetector
+================================================
+[1/8] Venv ja existe.
+[2/8] Atualizando pip/setuptools/wheel...
+Requirement already satisfied: pip in .\.venv\Lib\site-packages (26.1)
+Requirement already satisfied: setuptools in .\.venv\Lib\site-packages (82.0.1)
+Requirement already satisfied: wheel in .\.venv\Lib\site-packages (0.47.0)
+Requirement already satisfied: packaging>=24.0 in .\.venv\Lib\site-packages (from wheel) (26.2)
+[3/8] Instalando dependencias...
+Requirement already satisfied: python-dotenv==1.2.2 in .\.venv\Lib\site-packages (from -r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 1)) (1.2.2)
+Requirement already satisfied: groq==1.1.0 in .\.venv\Lib\site-packages (from -r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (1.1.0)
+Requirement already satisfied: openpyxl==3.1.5 in .\.venv\Lib\site-packages (from -r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 3)) (3.1.5)
+Requirement already satisfied: pyinstaller==6.19.0 in .\.venv\Lib\site-packages (from -r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (6.19.0)
+Requirement already satisfied: anyio<5,>=3.5.0 in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (4.13.0)
+Requirement already satisfied: distro<2,>=1.7.0 in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (1.9.0)
+Requirement already satisfied: httpx<1,>=0.23.0 in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (0.28.1)
+Requirement already satisfied: pydantic<3,>=1.9.0 in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (2.13.3)
+Requirement already satisfied: sniffio in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (1.3.1)
+Requirement already satisfied: typing-extensions<5,>=4.10 in .\.venv\Lib\site-packages (from groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (4.15.0)
+Requirement already satisfied: et-xmlfile in .\.venv\Lib\site-packages (from openpyxl==3.1.5->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 3)) (2.0.0)
+Requirement already satisfied: altgraph in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (0.17.5)
+Requirement already satisfied: packaging>=22.0 in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (26.2)
+Requirement already satisfied: pefile>=2022.5.30 in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (2024.8.26)
+Requirement already satisfied: pyinstaller-hooks-contrib>=2026.0 in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (2026.4)
+Requirement already satisfied: pywin32-ctypes>=0.2.1 in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (0.2.3)
+Requirement already satisfied: setuptools>=42.0.0 in .\.venv\Lib\site-packages (from pyinstaller==6.19.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 4)) (82.0.1)
+Requirement already satisfied: idna>=2.8 in .\.venv\Lib\site-packages (from anyio<5,>=3.5.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (3.13)
+Requirement already satisfied: certifi in .\.venv\Lib\site-packages (from httpx<1,>=0.23.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (2026.4.22)
+Requirement already satisfied: httpcore==1.* in .\.venv\Lib\site-packages (from httpx<1,>=0.23.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (1.0.9)
+Requirement already satisfied: h11>=0.16 in .\.venv\Lib\site-packages (from httpcore==1.*->httpx<1,>=0.23.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (0.16.0)
+Requirement already satisfied: annotated-types>=0.6.0 in .\.venv\Lib\site-packages (from pydantic<3,>=1.9.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (0.7.0)
+Requirement already satisfied: pydantic-core==2.46.3 in .\.venv\Lib\site-packages (from pydantic<3,>=1.9.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (2.46.3)
+Requirement already satisfied: typing-inspection>=0.4.2 in .\.venv\Lib\site-packages (from pydantic<3,>=1.9.0->groq==1.1.0->-r C:\Users\gabriel.costa\Documents\GitHub\radio\requirements.txt (line 2)) (0.4.2)
+[4/8] Limpando build anterior...
+[5/8] Gerando executavel...
+401 INFO: PyInstaller: 6.19.0, contrib hooks: 2026.4
+402 INFO: Python: 3.14.3
+438 INFO: Platform: Windows-11-10.0.26100-SP0
+438 INFO: Python environment: C:\Users\gabriel.costa\Documents\GitHub\radio\.venv
+441 INFO: wrote C:\Users\gabriel.costa\Documents\GitHub\radio\RadioAdDetector.spec
+445 INFO: Removing temporary files and cleaning cache in C:\Users\gabriel.costa\AppData\Local\pyinstaller
+487 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio',
+ 'C:\\Users\\gabriel.costa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python314.zip',
+ 'C:\\Users\\gabriel.costa\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs',
+ 'C:\\Users\\gabriel.costa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib',
+ 'C:\\Users\\gabriel.costa\\AppData\\Local\\Python\\pythoncore-3.14-64',
+ 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv',
+ 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages',
+ 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio']
+912 INFO: Appending 'datas' from .spec
+912 INFO: checking Analysis
+912 INFO: Building Analysis because Analysis-00.toc is non existent
+912 INFO: Looking for Python shared library...
+912 INFO: Using Python shared library: C:\Users\gabriel.costa\AppData\Local\Python\pythoncore-3.14-64\python314.dll
+912 INFO: Running Analysis Analysis-00.toc
+912 INFO: Target bytecode optimization level: 2
+912 INFO: Initializing module dependency graph...
+913 INFO: Initializing module graph hook caches...
+931 INFO: Analyzing modules for base_library.zip ...
+4061 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+4806 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5242 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5280 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11680 INFO: Caching module dependency graph...
+11739 INFO: Analyzing C:\Users\gabriel.costa\Documents\GitHub\radio\main.py
+11906 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+11910 INFO: SetuptoolsInfo: initializing cached setuptools info...
+13533 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13784 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+14440 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+14449 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+15690 INFO: Processing standard module hook 'hook-pydantic.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+16716 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+17981 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+23568 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+23980 INFO: Processing standard module hook 'hook-anyio.py' from 'C:\\Users\\gabriel.costa\\Documents\\GitHub\\radio\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+Aborted by user request.
+Deseja finalizar o arquivo em lotes (S/N)? 
+^C[ERRO] PyInstaller falhou.

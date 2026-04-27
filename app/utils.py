@@ -9,6 +9,7 @@ TRANSCRIPTION_FIXES = {
     "moresq": "Moreschi",
     "moresc": "Moreschi",
     "moresqui": "Moreschi",
+    "grupo Moreschi de supermercados": "Moreschi",
     "la juma": "Lajuma",
     "lajuma": "Lajuma",
     "pony watts": "Fone Whats",
@@ -18,12 +19,14 @@ TRANSCRIPTION_FIXES = {
     "Cicrede": "Sicredi",
     "Cicrede": "Sicredi",
     "Cicred": "Sicredi",
-    "Magate": "Magatti",
     "Clube do Precinho": "Antunes",
+    "Antunes Mais": "Antunes",
+    "Clube do Japonesinho": "Iquegami",
+    "Magate": "Magatti",
     "Presti Monte": "Prestmont",
     "WEG": "Netflex",
     "Clube Max": "Max Atacadista",
-    "Antunes Mais": "Antunes Supermercados",
+    "Cleopresentes": "Cléo Presentes",
     
 }
 
